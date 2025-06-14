@@ -179,3 +179,6 @@ Thumbs.db
 
 # Build output (keep dist for npm package)
 # dist/
+
+# Amazon Q configuration files
+.amazonq/

@@ -1,7 +1,7 @@
 /**
  * @aws-lambda-mcp/adapter
  * 
- * A production-ready MCP (Model Context Protocol) server SDK for AWS Lambda
+ * An MCP (Model Context Protocol) server SDK for AWS Lambda
  * with Zod-based type safety and clean separation of concerns.
  */
 

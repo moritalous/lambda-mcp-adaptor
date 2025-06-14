@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  mcp-server example
+
+  MCP Server using AWS Lambda and API Gateway
+  
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs22.x
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        NODE_ENV: production
+
+Resources:
+  MCPServerFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: mcp-server/
+      Handler: app.lambdaHandler
+      Description: MCP Tools Server - provides tools via Model Context Protocol
+      Events:
+        MCPEndpoint:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /mcp
+            Method: post
+        MCPEndpointGet:
+          Type: Api
+          Properties:
+            Path: /mcp
+            Method: get
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  MCPServerApi:
+    Description: "API Gateway endpoint URL for Prod stage for MCP Server function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/mcp"
+  MCPServerFunction:
+    Description: "MCP Server Lambda Function ARN"
+    Value: !GetAtt MCPServerFunction.Arn
+  MCPServerFunctionIamRole:
+    Description: "Implicit IAM Role created for MCP Server function"
+    Value: !GetAtt MCPServerFunctionRole.Arn
