@@ -1,26 +1,50 @@
 # lambda-mcp-adaptor
 
-A production-ready MCP (Model Context Protocol) server SDK for AWS Lambda with Zod-based type safety and clean separation of concerns.
+An MCP (Model Context Protocol) server SDK for AWS serverless architecture with familiar, official SDK-like API design.
 
-[![npm version](https://badge.fury.io/js/lambda-mcp-adaptor.svg)](https://badge.fury.io/js/lambda-mcp-adaptor)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## What is lambda-mcp-adaptor?
 
-## 🚀 Features
+`lambda-mcp-adaptor` is a TypeScript/JavaScript SDK that provides an official SDK-like experience for building MCP (Model Context Protocol) servers on AWS serverless architecture. It offers a clean, intuitive API similar to other popular SDKs, making it easy to define tools, resources, and prompts.
 
-- **Type-Safe Tool Definitions**: Zod schema validation with automatic JSON Schema generation
-- **Method Chaining**: Fluent API for registering tools, resources, and prompts
-- **AWS Lambda Optimized**: Clean adapter layer handling all HTTP/JSON-RPC protocol details
+### Key Features
+
+- **Official SDK-like API**: Familiar and intuitive interface similar to popular SDKs
+- **Simple Tool Registration**: Easy-to-use fluent API for defining server capabilities
+- **AWS Serverless Ready**: Built specifically for API Gateway and Lambda deployment
 - **Zero Configuration**: Works out of the box with sensible defaults
-- **Full MCP Compliance**: Supports MCP specification 2025-03-26
-- **Error Handling**: Comprehensive validation and error reporting
+- **Full MCP Support**: Complete MCP specification 2025-03-26 implementation
+- **Built-in Validation**: Automatic input validation and error handling
 
-## 📦 Installation
+## Examples
+
+See the [example](./example/) directory for a complete working example of an MCP server deployed on AWS serverless architecture (API Gateway + Lambda) with comprehensive tools and features including mathematical operations, text processing, and utility functions.
+
+## Installation
+
+Install directly from GitHub:
 
 ```bash
-npm install lambda-mcp-adaptor zod
+npm install github:moritalous/lambda-mcp-adaptor
 ```
 
-## 🎯 Quick Start
+## Quick Start with AWS SAM
+
+### 1. Initialize SAM Application
+
+```bash
+sam init --runtime nodejs22.x --name my-mcp-server --app-template hello-world
+cd my-mcp-server
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install github:moritalous/lambda-mcp-adaptor zod
+```
+
+### 3. Create Your MCP Server
+
+Replace the contents of `app.mjs`:
 
 ```javascript
 import { createMCPServer, createLambdaHandler } from 'lambda-mcp-adaptor';
@@ -30,45 +54,73 @@ import { z } from 'zod';
 const server = createMCPServer({
   name: 'My MCP Server',
   version: '1.0.0',
-  description: 'A powerful MCP server with type-safe validation'
+  description: 'A powerful MCP server'
 });
 
-// Register tools with type safety
-server
-  .tool('calculate', {
-    operation: z.enum(['add', 'subtract', 'multiply', 'divide']),
-    a: z.number(),
-    b: z.number()
-  }, async ({ operation, a, b }) => {
-    let result;
-    switch (operation) {
-      case 'add': result = a + b; break;
-      case 'subtract': result = a - b; break;
-      case 'multiply': result = a * b; break;
-      case 'divide': result = a / b; break;
-    }
-    
-    return {
-      content: [{ type: 'text', text: `${a} ${operation} ${b} = ${result}` }]
-    };
-  })
+// Register tools with simple API
+server.tool('calculate', {
+  operation: z.enum(['add', 'subtract', 'multiply', 'divide']),
+  a: z.number(),
+  b: z.number()
+}, async ({ operation, a, b }) => {
+  let result;
+  switch (operation) {
+    case 'add': result = a + b; break;
+    case 'subtract': result = a - b; break;
+    case 'multiply': result = a * b; break;
+    case 'divide': result = a / b; break;
+  }
   
-  .tool('get_time', {
-    format: z.enum(['iso', 'unix']).optional().default('iso')
-  }, async ({ format = 'iso' }) => {
-    const now = new Date();
-    const time = format === 'iso' ? now.toISOString() : now.getTime().toString();
-    
-    return {
-      content: [{ type: 'text', text: `Current time: ${time}` }]
-    };
-  });
+  return {
+    content: [{ type: 'text', text: `${a} ${operation} ${b} = ${result}` }]
+  };
+});
 
-// Export Lambda handler (handles all HTTP/JSON-RPC complexity)
+// Export Lambda handler (handles all the complexity for you)
 export const lambdaHandler = createLambdaHandler(server);
 ```
 
-## 🔧 API Reference
+### 4. Update SAM Template
+
+Update your `template.yaml` to include API Gateway:
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  MCPServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: app.lambdaHandler
+      Runtime: nodejs22.x
+      Events:
+        MCPEndpoint:
+          Type: Api
+          Properties:
+            Path: /mcp
+            Method: post
+        MCPOptions:
+          Type: Api
+          Properties:
+            Path: /mcp
+            Method: options
+
+Outputs:
+  MCPServerApi:
+    Description: "API Gateway endpoint URL for MCP Server"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/mcp"
+```
+
+### 5. Deploy
+
+```bash
+sam build
+sam deploy --guided
+```
+
+## API Reference
 
 ### createMCPServer(config)
 
@@ -85,7 +137,7 @@ const server = createMCPServer({
 
 ### server.tool(name, inputSchema, handler)
 
-Register a tool with Zod schema validation.
+Register a tool with automatic input validation.
 
 ```javascript
 server.tool('tool_name', {
@@ -101,127 +153,37 @@ server.tool('tool_name', {
 });
 ```
 
-### server.resource(name, uri, handler)
+**Input Schema Types:**
+- `z.string()` - String parameter
+- `z.number()` - Numeric parameter
+- `z.boolean()` - Boolean parameter
+- `z.enum(['a', 'b'])` - Enumerated values
+- `z.array(z.string())` - Array of strings
+- `z.object({...})` - Nested object
+- `.optional()` - Optional parameter
+- `.default(value)` - Default value
+- `.describe('...')` - Parameter description
 
-Register a resource.
-
+**Return Format:**
 ```javascript
-server.resource('resource_name', 'resource://uri', async (uri) => {
-  return {
-    contents: [{
-      uri: uri,
-      text: 'Resource content',
-      mimeType: 'text/plain'
-    }]
-  };
-});
-```
-
-### server.prompt(name, inputSchema, handler)
-
-Register a prompt template.
-
-```javascript
-server.prompt('prompt_name', {
-  input: z.string(),
-  context: z.string().optional()
-}, ({ input, context }) => {
-  return {
-    messages: [{
-      role: 'user',
-      content: {
-        type: 'text',
-        text: `Process: ${input}${context ? ` Context: ${context}` : ''}`
-      }
-    }]
-  };
-});
+{
+  content: [
+    { type: 'text', text: 'Response text' },
+    { type: 'image', data: 'base64...', mimeType: 'image/png' }
+  ],
+  isError: false // Optional: true for error responses
+}
 ```
 
 ### createLambdaHandler(server)
 
-Creates an AWS Lambda handler from an MCP server instance.
+Creates an AWS Lambda handler for API Gateway integration from an MCP server instance.
 
 ```javascript
 export const lambdaHandler = createLambdaHandler(server);
 ```
 
-## 🎨 Advanced Examples
-
-### Complex Tool with Validation
-
-```javascript
-server.tool('process_data', {
-  data: z.array(z.object({
-    id: z.string().uuid(),
-    value: z.number().min(0).max(100),
-    tags: z.array(z.string()).optional()
-  })),
-  operation: z.enum(['sum', 'average', 'max', 'min']),
-  filters: z.object({
-    minValue: z.number().optional(),
-    requiredTags: z.array(z.string()).optional()
-  }).optional()
-}, async ({ data, operation, filters }) => {
-  // Complex data processing with full type safety
-  let filteredData = data;
-  
-  if (filters?.minValue) {
-    filteredData = filteredData.filter(item => item.value >= filters.minValue);
-  }
-  
-  if (filters?.requiredTags?.length) {
-    filteredData = filteredData.filter(item => 
-      filters.requiredTags.every(tag => item.tags?.includes(tag))
-    );
-  }
-  
-  let result;
-  switch (operation) {
-    case 'sum':
-      result = filteredData.reduce((sum, item) => sum + item.value, 0);
-      break;
-    case 'average':
-      result = filteredData.reduce((sum, item) => sum + item.value, 0) / filteredData.length;
-      break;
-    case 'max':
-      result = Math.max(...filteredData.map(item => item.value));
-      break;
-    case 'min':
-      result = Math.min(...filteredData.map(item => item.value));
-      break;
-  }
-  
-  return {
-    content: [{
-      type: 'text',
-      text: `${operation} of ${filteredData.length} items: ${result}`
-    }]
-  };
-});
-```
-
-### Error Handling
-
-```javascript
-server.tool('divide', {
-  a: z.number(),
-  b: z.number()
-}, async ({ a, b }) => {
-  if (b === 0) {
-    return {
-      content: [{ type: 'text', text: 'Error: Division by zero' }],
-      isError: true
-    };
-  }
-  
-  return {
-    content: [{ type: 'text', text: `${a} ÷ ${b} = ${a / b}` }]
-  };
-});
-```
-
-## 🧪 Testing
+## Testing Your Server
 
 ```javascript
 import { createMCPServer } from 'lambda-mcp-adaptor';
@@ -253,106 +215,20 @@ const result = await server.handleRequest({
 console.log(result); // { content: [{ type: 'text', text: 'Echo: Hello World' }] }
 ```
 
-## 🚀 Deployment
-
-### AWS SAM Template
-
-```yaml
-AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-
-Resources:
-  MCPServerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: src/
-      Handler: app.lambdaHandler
-      Runtime: nodejs22.x
-      Events:
-        MCPEndpoint:
-          Type: Api
-          Properties:
-            Path: /mcp
-            Method: post
-```
-
-### Deploy Commands
-
-```bash
-# Build and deploy
-sam build
-sam deploy --guided
-```
-
-## 📚 Common Schemas
-
-The library provides common Zod schemas for convenience:
-
-```javascript
-import { CommonSchemas } from 'lambda-mcp-adaptor';
-
-server.tool('example', {
-  email: CommonSchemas.email,
-  url: CommonSchemas.url,
-  uuid: CommonSchemas.uuid,
-  tags: CommonSchemas.array(CommonSchemas.string),
-  status: CommonSchemas.enum(['active', 'inactive']),
-  metadata: CommonSchemas.object({
-    key: CommonSchemas.string,
-    value: CommonSchemas.optionalString
-  })
-}, async (args) => {
-  // Fully typed arguments
-});
-```
-
-## 🔍 TypeScript Support
-
-Full TypeScript support with automatic type inference:
-
-```typescript
-import { createMCPServer, createLambdaHandler } from 'lambda-mcp-adaptor';
-import { z } from 'zod';
-
-const server = createMCPServer({
-  name: 'Typed Server',
-  version: '1.0.0'
-});
-
-server.tool('typed_tool', {
-  name: z.string(),
-  age: z.number().int().positive(),
-  active: z.boolean().optional().default(true)
-}, async ({ name, age, active }) => {
-  // name: string, age: number, active: boolean
-  // Full type safety and IntelliSense support
-  
-  return {
-    content: [{ 
-      type: 'text', 
-      text: `User ${name} is ${age} years old and ${active ? 'active' : 'inactive'}` 
-    }]
-  };
-});
-```
-
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Add tests for new functionality
 4. Submit a pull request
 
-## 📄 License
+## License
 
-MIT License - see LICENSE file for details.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
-## 🔗 Related
+## Related Resources
 
-- [MCP Specification](https://modelcontextprotocol.io/specification/)
-- [Zod Documentation](https://zod.dev/)
-- [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda/)
-
----
-
-**Built with ❤️ for the MCP community**
+- [MCP Specification](https://modelcontextprotocol.io/specification/) - Official MCP documentation
+- [Zod Documentation](https://zod.dev/) - Schema validation library
+- [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda/) - AWS Lambda guide
+- [AWS API Gateway Documentation](https://docs.aws.amazon.com/apigateway/) - AWS API Gateway guide

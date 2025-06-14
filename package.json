@@ -1,7 +1,7 @@
 {
   "name": "lambda-mcp-adaptor",
   "version": "1.0.0",
-  "description": "A production-ready MCP (Model Context Protocol) server SDK for AWS Lambda with Zod-based type safety",
+  "description": "An MCP (Model Context Protocol) server SDK for AWS serverless architecture with official SDK-like API design",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -39,7 +39,7 @@
     "tools"
   ],
   "author": "moritalous",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/moritalous/lambda-mcp-adaptor.git"
