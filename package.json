@@ -1,0 +1,63 @@
+{
+  "name": "lambda-mcp-adaptor",
+  "version": "1.0.0",
+  "description": "A production-ready MCP (Model Context Protocol) server SDK for AWS Lambda with Zod-based type safety",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && npm run build:types",
+    "build:esm": "esbuild src/index.mjs --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.mjs --external:zod",
+    "build:cjs": "esbuild src/index.mjs --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.js --external:zod",
+    "build:types": "cp src/index.d.ts dist/index.d.ts",
+    "test": "mocha tests/**/*.test.mjs",
+    "prepublishOnly": "npm run build",
+    "dev": "node examples/basic-server.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "aws-lambda",
+    "serverless",
+    "zod",
+    "type-safety",
+    "json-rpc",
+    "ai",
+    "llm",
+    "tools"
+  ],
+  "author": "moritalous",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moritalous/lambda-mcp-adaptor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/moritalous/lambda-mcp-adaptor/issues"
+  },
+  "homepage": "https://github.com/moritalous/lambda-mcp-adaptor#readme",
+  "peerDependencies": {
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.19.0",
+    "mocha": "^10.2.0",
+    "chai": "^4.3.6",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
