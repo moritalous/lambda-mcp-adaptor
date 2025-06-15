@@ -1,6 +1,6 @@
 /**
  * Schema Utilities
- * 
+ *
  * Zod schema conversion and validation utilities
  */
 
@@ -12,19 +12,19 @@ import { z } from 'zod';
 export function zodToJsonSchema(zodSchema) {
   const properties = {};
   const required = [];
-  
+
   for (const [key, schema] of Object.entries(zodSchema)) {
     properties[key] = convertZodTypeToJsonSchema(schema);
-    
+
     if (!isZodOptional(schema)) {
       required.push(key);
     }
   }
-  
+
   return {
     type: 'object',
     properties,
-    required
+    required,
   };
 }
 
@@ -36,18 +36,18 @@ function convertZodTypeToJsonSchema(zodType) {
   if (zodType instanceof z.ZodOptional) {
     return convertZodTypeToJsonSchema(zodType._def.innerType);
   }
-  
+
   // Handle ZodDefault
   if (zodType instanceof z.ZodDefault) {
     const schema = convertZodTypeToJsonSchema(zodType._def.innerType);
     schema.default = zodType._def.defaultValue();
     return schema;
   }
-  
+
   // Handle ZodString
   if (zodType instanceof z.ZodString) {
     const schema = { type: 'string' };
-    
+
     // Add constraints
     if (zodType._def.checks) {
       for (const check of zodType._def.checks) {
@@ -70,18 +70,18 @@ function convertZodTypeToJsonSchema(zodType) {
         }
       }
     }
-    
+
     if (zodType.description) {
       schema.description = zodType.description;
     }
-    
+
     return schema;
   }
-  
+
   // Handle ZodNumber
   if (zodType instanceof z.ZodNumber) {
     const schema = { type: 'number' };
-    
+
     if (zodType._def.checks) {
       for (const check of zodType._def.checks) {
         switch (check.kind) {
@@ -97,70 +97,70 @@ function convertZodTypeToJsonSchema(zodType) {
         }
       }
     }
-    
+
     if (zodType.description) {
       schema.description = zodType.description;
     }
-    
+
     return schema;
   }
-  
+
   // Handle ZodBoolean
   if (zodType instanceof z.ZodBoolean) {
     const schema = { type: 'boolean' };
-    
+
     if (zodType.description) {
       schema.description = zodType.description;
     }
-    
+
     return schema;
   }
-  
+
   // Handle ZodEnum
   if (zodType instanceof z.ZodEnum) {
     const schema = {
       type: 'string',
-      enum: zodType._def.values
+      enum: zodType._def.values,
     };
-    
+
     if (zodType.description) {
       schema.description = zodType.description;
     }
-    
+
     return schema;
   }
-  
+
   // Handle ZodArray
   if (zodType instanceof z.ZodArray) {
     const schema = {
       type: 'array',
-      items: convertZodTypeToJsonSchema(zodType._def.type)
+      items: convertZodTypeToJsonSchema(zodType._def.type),
     };
-    
+
     if (zodType._def.minLength) {
       schema.minItems = zodType._def.minLength.value;
     }
-    
+
     if (zodType._def.maxLength) {
       schema.maxItems = zodType._def.maxLength.value;
     }
-    
+
     if (zodType.description) {
       schema.description = zodType.description;
     }
-    
+
     return schema;
   }
-  
+
   // Handle ZodObject
   if (zodType instanceof z.ZodObject) {
     return zodToJsonSchema(zodType.shape);
   }
-  
+
   // Fallback for unknown types
   return {
     type: 'string',
-    description: zodType.description || 'Unknown type'
+    description: zodType.description || 'Unknown type',
   };
 }
 
@@ -168,8 +168,7 @@ function convertZodTypeToJsonSchema(zodType) {
  * Check if Zod type is optional
  */
 export function isZodOptional(zodType) {
-  return zodType instanceof z.ZodOptional || 
-         (zodType instanceof z.ZodDefault);
+  return zodType instanceof z.ZodOptional || zodType instanceof z.ZodDefault;
 }
 
 /**
@@ -184,7 +183,7 @@ export function hasZodDefault(zodType) {
  */
 export function validateWithZod(zodSchema, args) {
   const validated = {};
-  
+
   for (const [key, schema] of Object.entries(zodSchema)) {
     try {
       if (args[key] === undefined && isZodOptional(schema)) {
@@ -193,16 +192,18 @@ export function validateWithZod(zodSchema, args) {
         }
         continue;
       }
-      
+
       validated[key] = schema.parse(args[key]);
     } catch (error) {
-      throw new z.ZodError([{
-        code: 'custom',
-        path: [key],
-        message: `${error.message}`
-      }]);
+      throw new z.ZodError([
+        {
+          code: 'custom',
+          path: [key],
+          message: `${error.message}`,
+        },
+      ]);
     }
   }
-  
+
   return validated;
 }

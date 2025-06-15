@@ -1,10 +1,10 @@
 /**
  * Bearer Token Authentication Module
- * 
+ *
  * Provides Bearer token validation functionality for MCP servers
  */
 
-import { withCORS, withBasicCORS } from '../cors-config.mjs';
+import { withCORS } from '../cors-config.mjs';
 
 /**
  * Creates an authentication error response
@@ -14,10 +14,15 @@ import { withCORS, withBasicCORS } from '../cors-config.mjs';
  * @param {Object} additionalHeaders - Additional headers to include
  * @returns {Object} Lambda response object
  */
-function createAuthErrorResponse(statusCode, error, message, additionalHeaders = {}) {
+function createAuthErrorResponse(
+  statusCode,
+  error,
+  message,
+  additionalHeaders = {}
+) {
   const headers = withCORS({
     'Content-Type': 'application/json',
-    ...additionalHeaders
+    ...additionalHeaders,
   });
 
   return {
@@ -25,8 +30,8 @@ function createAuthErrorResponse(statusCode, error, message, additionalHeaders =
     headers,
     body: JSON.stringify({
       error,
-      message
-    })
+      message,
+    }),
   };
 }
 
@@ -37,8 +42,9 @@ function createAuthErrorResponse(statusCode, error, message, additionalHeaders =
  * @returns {Object} Validation result with isValid flag and error/user data
  */
 export function validateBearerToken(event, config = {}) {
-  const authHeader = event.headers?.authorization || event.headers?.Authorization;
-  
+  const authHeader =
+    event.headers?.authorization || event.headers?.Authorization;
+
   // Check if Authorization header exists
   if (!authHeader) {
     return {
@@ -48,10 +54,10 @@ export function validateBearerToken(event, config = {}) {
         'unauthorized',
         'Authorization header is required',
         { 'WWW-Authenticate': 'Bearer realm="MCP Server"' }
-      )
+      ),
     };
   }
-  
+
   // Check if it's a Bearer token
   if (!authHeader.startsWith('Bearer ')) {
     return {
@@ -61,12 +67,12 @@ export function validateBearerToken(event, config = {}) {
         'unauthorized',
         'Bearer token is required',
         { 'WWW-Authenticate': 'Bearer realm="MCP Server"' }
-      )
+      ),
     };
   }
-  
+
   const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-  
+
   // Handle custom validation function
   if (config.validate && typeof config.validate === 'function') {
     try {
@@ -75,17 +81,19 @@ export function validateBearerToken(event, config = {}) {
         return {
           isValid: true,
           user: result.user || { token },
-          token
+          token,
         };
       } else {
         return {
           isValid: false,
-          error: result?.error || createAuthErrorResponse(
-            401,
-            'invalid_token',
-            'Invalid or expired token',
-            { 'WWW-Authenticate': 'Bearer realm="MCP Server"' }
-          )
+          error:
+            result?.error ||
+            createAuthErrorResponse(
+              401,
+              'invalid_token',
+              'Invalid or expired token',
+              { 'WWW-Authenticate': 'Bearer realm="MCP Server"' }
+            ),
         };
       }
     } catch (error) {
@@ -96,14 +104,14 @@ export function validateBearerToken(event, config = {}) {
           500,
           'server_error',
           'Authentication validation error'
-        )
+        ),
       };
     }
   }
-  
+
   // Handle token list validation
   const validTokens = config.tokens || [];
-  
+
   if (validTokens.length === 0) {
     console.warn('No valid tokens configured for Bearer token authentication.');
     return {
@@ -112,10 +120,10 @@ export function validateBearerToken(event, config = {}) {
         500,
         'server_error',
         'Authentication not configured'
-      )
+      ),
     };
   }
-  
+
   if (!validTokens.includes(token)) {
     return {
       isValid: false,
@@ -124,14 +132,14 @@ export function validateBearerToken(event, config = {}) {
         'invalid_token',
         'Invalid or expired token',
         { 'WWW-Authenticate': 'Bearer realm="MCP Server"' }
-      )
+      ),
     };
   }
-  
+
   return {
     isValid: true,
     user: { token },
-    token
+    token,
   };
 }
 
@@ -141,11 +149,11 @@ export function validateBearerToken(event, config = {}) {
  * @returns {Object} Authentication configuration
  */
 export function createBearerTokenConfigFromEnv(envVar = 'VALID_TOKENS') {
-  const tokens = (process.env[envVar] || '').split(',').filter(t => t.trim());
-  
+  const tokens = (process.env[envVar] || '').split(',').filter((t) => t.trim());
+
   return {
     type: 'bearer-token',
-    tokens
+    tokens,
   };
 }
 
@@ -157,6 +165,6 @@ export function createBearerTokenConfigFromEnv(envVar = 'VALID_TOKENS') {
 export function createBearerTokenConfigWithValidation(validateFn) {
   return {
     type: 'bearer-token',
-    validate: validateFn
+    validate: validateFn,
   };
 }

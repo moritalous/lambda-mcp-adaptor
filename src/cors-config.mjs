@@ -1,6 +1,6 @@
 /**
  * CORS Configuration
- * 
+ *
  * Centralized CORS headers configuration for consistent handling across all modules
  */
 
@@ -10,15 +10,16 @@
  */
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+  'Access-Control-Allow-Headers':
+    'Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 /**
  * Basic CORS headers for simple responses
  */
 export const BASIC_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*'
+  'Access-Control-Allow-Origin': '*',
 };
 
 /**
@@ -27,7 +28,7 @@ export const BASIC_CORS_HEADERS = {
 export function withCORS(additionalHeaders = {}) {
   return {
     ...CORS_HEADERS,
-    ...additionalHeaders
+    ...additionalHeaders,
   };
 }
 
@@ -37,6 +38,6 @@ export function withCORS(additionalHeaders = {}) {
 export function withBasicCORS(additionalHeaders = {}) {
   return {
     ...BASIC_CORS_HEADERS,
-    ...additionalHeaders
+    ...additionalHeaders,
   };
 }
