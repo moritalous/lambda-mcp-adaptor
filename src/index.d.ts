@@ -3,7 +3,11 @@
  */
 
 import { z } from 'zod';
-import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
+import {
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
+  Context,
+} from 'aws-lambda';
 
 // Core Types
 export interface MCPServerConfig {
@@ -11,6 +15,25 @@ export interface MCPServerConfig {
   version: string;
   description?: string;
   protocolVersion?: string;
+}
+
+// JSON-RPC Types
+export interface JsonRpcRequest {
+  jsonrpc: string;
+  method: string;
+  params?: Record<string, unknown>;
+  id?: string | number | null;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc: string;
+  result?: unknown;
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
+  id?: string | number | null;
 }
 
 export interface MCPToolResult {
@@ -47,7 +70,7 @@ export interface MCPPromptResult {
 // Authentication Types
 export interface AuthUser {
   token?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface AuthValidationResult {
@@ -60,7 +83,10 @@ export interface AuthValidationResult {
 export interface BearerTokenAuthConfig {
   type: 'bearer-token';
   tokens?: string[];
-  validate?: (token: string, event: APIGatewayProxyEvent) => AuthValidationResult | Promise<AuthValidationResult>;
+  validate?: (
+    token: string,
+    event: APIGatewayProxyEvent
+  ) => AuthValidationResult | Promise<AuthValidationResult>;
 }
 
 export type AuthConfig = BearerTokenAuthConfig;
@@ -71,33 +97,33 @@ export interface LambdaHandlerOptions {
 
 // Schema Types
 export type ZodSchema = Record<string, z.ZodType>;
-export type ToolHandler<T = any> = (args: T) => Promise<MCPToolResult>;
+export type ToolHandler<T = Record<string, unknown>> = (
+  args: T
+) => Promise<MCPToolResult>;
 export type ResourceHandler = (uri: string) => Promise<MCPResourceResult>;
-export type PromptHandler<T = any> = (args: T) => Promise<MCPPromptResult>;
+export type PromptHandler<T = Record<string, unknown>> = (
+  args: T
+) => Promise<MCPPromptResult>;
 
 // Core Classes
 export declare class MCPServer {
   constructor(config: MCPServerConfig);
-  
+
   tool<T extends ZodSchema>(
     name: string,
     inputSchema: T,
     handler: ToolHandler<z.infer<z.ZodObject<T>>>
   ): MCPServer;
-  
-  resource(
-    name: string,
-    uri: string,
-    handler: ResourceHandler
-  ): MCPServer;
-  
+
+  resource(name: string, uri: string, handler: ResourceHandler): MCPServer;
+
   prompt<T extends ZodSchema>(
     name: string,
     inputSchema: T,
     handler: PromptHandler<z.infer<z.ZodObject<T>>>
   ): MCPServer;
-  
-  handleRequest(request: any): Promise<any>;
+
+  handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse | null>;
   getStats(): {
     tools: number;
     resources: number;
@@ -112,7 +138,10 @@ export declare function createMCPServer(config: MCPServerConfig): MCPServer;
 export declare function createLambdaHandler(
   mcpServer: MCPServer,
   options?: LambdaHandlerOptions
-): (event: APIGatewayProxyEvent, context: Context) => Promise<APIGatewayProxyResult>;
+): (
+  event: APIGatewayProxyEvent,
+  context: Context
+) => Promise<APIGatewayProxyResult>;
 
 // Common Schemas
 export declare const CommonSchemas: {

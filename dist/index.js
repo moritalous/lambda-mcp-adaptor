@@ -2,6 +2,9 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -16,6 +19,222 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// src/cors-config.mjs
+function withCORS(additionalHeaders = {}) {
+  return {
+    ...CORS_HEADERS,
+    ...additionalHeaders
+  };
+}
+function withBasicCORS(additionalHeaders = {}) {
+  return {
+    ...BASIC_CORS_HEADERS,
+    ...additionalHeaders
+  };
+}
+var CORS_HEADERS, BASIC_CORS_HEADERS;
+var init_cors_config = __esm({
+  "src/cors-config.mjs"() {
+    CORS_HEADERS = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    };
+    BASIC_CORS_HEADERS = {
+      "Access-Control-Allow-Origin": "*"
+    };
+  }
+});
+
+// src/auth/bearer-token.mjs
+function createAuthErrorResponse(statusCode, error, message, additionalHeaders = {}) {
+  const headers = withCORS({
+    "Content-Type": "application/json",
+    ...additionalHeaders
+  });
+  return {
+    statusCode,
+    headers,
+    body: JSON.stringify({
+      error,
+      message
+    })
+  };
+}
+function validateBearerToken(event, config = {}) {
+  const authHeader = event.headers?.authorization || event.headers?.Authorization;
+  if (!authHeader) {
+    return {
+      isValid: false,
+      error: createAuthErrorResponse(
+        401,
+        "unauthorized",
+        "Authorization header is required",
+        { "WWW-Authenticate": 'Bearer realm="MCP Server"' }
+      )
+    };
+  }
+  if (!authHeader.startsWith("Bearer ")) {
+    return {
+      isValid: false,
+      error: createAuthErrorResponse(
+        401,
+        "unauthorized",
+        "Bearer token is required",
+        { "WWW-Authenticate": 'Bearer realm="MCP Server"' }
+      )
+    };
+  }
+  const token = authHeader.substring(7);
+  if (config.validate && typeof config.validate === "function") {
+    try {
+      const result = config.validate(token, event);
+      if (result && result.isValid) {
+        return {
+          isValid: true,
+          user: result.user || { token },
+          token
+        };
+      } else {
+        return {
+          isValid: false,
+          error: result?.error || createAuthErrorResponse(
+            401,
+            "invalid_token",
+            "Invalid or expired token",
+            { "WWW-Authenticate": 'Bearer realm="MCP Server"' }
+          )
+        };
+      }
+    } catch (error) {
+      console.error("Error in custom token validation:", error);
+      return {
+        isValid: false,
+        error: createAuthErrorResponse(
+          500,
+          "server_error",
+          "Authentication validation error"
+        )
+      };
+    }
+  }
+  const validTokens = config.tokens || [];
+  if (validTokens.length === 0) {
+    console.warn("No valid tokens configured for Bearer token authentication.");
+    return {
+      isValid: false,
+      error: createAuthErrorResponse(
+        500,
+        "server_error",
+        "Authentication not configured"
+      )
+    };
+  }
+  if (!validTokens.includes(token)) {
+    return {
+      isValid: false,
+      error: createAuthErrorResponse(
+        401,
+        "invalid_token",
+        "Invalid or expired token",
+        { "WWW-Authenticate": 'Bearer realm="MCP Server"' }
+      )
+    };
+  }
+  return {
+    isValid: true,
+    user: { token },
+    token
+  };
+}
+var init_bearer_token = __esm({
+  "src/auth/bearer-token.mjs"() {
+    init_cors_config();
+  }
+});
+
+// src/auth/middleware.mjs
+var middleware_exports = {};
+__export(middleware_exports, {
+  createAuthMiddleware: () => createAuthMiddleware,
+  createAuthenticatedHandler: () => createAuthenticatedHandler
+});
+function handleCORSPreflight(event) {
+  const method = event.requestContext?.http?.method || event.httpMethod;
+  if (method === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: ""
+    };
+  }
+  return null;
+}
+function createAuthMiddleware(authConfig) {
+  return async (event) => {
+    const corsResponse = handleCORSPreflight(event);
+    if (corsResponse) {
+      return corsResponse;
+    }
+    let authResult;
+    switch (authConfig.type) {
+      case "bearer-token":
+        authResult = validateBearerToken(event, authConfig);
+        break;
+      default:
+        console.error(`Unsupported authentication type: ${authConfig.type}`);
+        return {
+          statusCode: 500,
+          headers: withBasicCORS({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            error: "server_error",
+            message: "Unsupported authentication type"
+          })
+        };
+    }
+    if (!authResult.isValid) {
+      console.log("Authentication failed:", authResult.error.body);
+      return authResult.error;
+    }
+    event.user = authResult.user;
+    event.authToken = authResult.token;
+    console.log("Authentication successful");
+    return null;
+  };
+}
+function createAuthenticatedHandler(originalHandler, authConfig) {
+  const authMiddleware = createAuthMiddleware(authConfig);
+  return async (event) => {
+    console.log("=== MCP Server Request Start (with Authentication) ===");
+    console.log("Event:", JSON.stringify(event, null, 2));
+    try {
+      const authResponse = await authMiddleware(event);
+      if (authResponse) {
+        return authResponse;
+      }
+      const response = await originalHandler(event);
+      console.log("=== MCP Server Request End ===");
+      return response;
+    } catch (error) {
+      console.error("Error in authenticated MCP server:", error);
+      return {
+        statusCode: 500,
+        headers: withBasicCORS({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          error: "internal_server_error",
+          message: "An internal server error occurred"
+        })
+      };
+    }
+  };
+}
+var init_middleware = __esm({
+  "src/auth/middleware.mjs"() {
+    init_bearer_token();
+    init_cors_config();
+  }
+});
+
 // src/index.mjs
 var src_exports = {};
 __export(src_exports, {
@@ -25,7 +244,155 @@ __export(src_exports, {
   createMCPServer: () => createMCPServer
 });
 module.exports = __toCommonJS(src_exports);
+
+// src/schema-utils.mjs
 var import_zod = require("zod");
+function zodToJsonSchema(zodSchema) {
+  const properties = {};
+  const required = [];
+  for (const [key, schema] of Object.entries(zodSchema)) {
+    properties[key] = convertZodTypeToJsonSchema(schema);
+    if (!isZodOptional(schema)) {
+      required.push(key);
+    }
+  }
+  return {
+    type: "object",
+    properties,
+    required
+  };
+}
+function convertZodTypeToJsonSchema(zodType) {
+  if (zodType instanceof import_zod.z.ZodOptional) {
+    return convertZodTypeToJsonSchema(zodType._def.innerType);
+  }
+  if (zodType instanceof import_zod.z.ZodDefault) {
+    const schema = convertZodTypeToJsonSchema(zodType._def.innerType);
+    schema.default = zodType._def.defaultValue();
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodString) {
+    const schema = { type: "string" };
+    if (zodType._def.checks) {
+      for (const check of zodType._def.checks) {
+        switch (check.kind) {
+          case "min":
+            schema.minLength = check.value;
+            break;
+          case "max":
+            schema.maxLength = check.value;
+            break;
+          case "email":
+            schema.format = "email";
+            break;
+          case "url":
+            schema.format = "uri";
+            break;
+          case "uuid":
+            schema.format = "uuid";
+            break;
+        }
+      }
+    }
+    if (zodType.description) {
+      schema.description = zodType.description;
+    }
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodNumber) {
+    const schema = { type: "number" };
+    if (zodType._def.checks) {
+      for (const check of zodType._def.checks) {
+        switch (check.kind) {
+          case "min":
+            schema.minimum = check.value;
+            break;
+          case "max":
+            schema.maximum = check.value;
+            break;
+          case "int":
+            schema.type = "integer";
+            break;
+        }
+      }
+    }
+    if (zodType.description) {
+      schema.description = zodType.description;
+    }
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodBoolean) {
+    const schema = { type: "boolean" };
+    if (zodType.description) {
+      schema.description = zodType.description;
+    }
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodEnum) {
+    const schema = {
+      type: "string",
+      enum: zodType._def.values
+    };
+    if (zodType.description) {
+      schema.description = zodType.description;
+    }
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodArray) {
+    const schema = {
+      type: "array",
+      items: convertZodTypeToJsonSchema(zodType._def.type)
+    };
+    if (zodType._def.minLength) {
+      schema.minItems = zodType._def.minLength.value;
+    }
+    if (zodType._def.maxLength) {
+      schema.maxItems = zodType._def.maxLength.value;
+    }
+    if (zodType.description) {
+      schema.description = zodType.description;
+    }
+    return schema;
+  }
+  if (zodType instanceof import_zod.z.ZodObject) {
+    return zodToJsonSchema(zodType.shape);
+  }
+  return {
+    type: "string",
+    description: zodType.description || "Unknown type"
+  };
+}
+function isZodOptional(zodType) {
+  return zodType instanceof import_zod.z.ZodOptional || zodType instanceof import_zod.z.ZodDefault;
+}
+function hasZodDefault(zodType) {
+  return zodType instanceof import_zod.z.ZodDefault;
+}
+function validateWithZod(zodSchema, args) {
+  const validated = {};
+  for (const [key, schema] of Object.entries(zodSchema)) {
+    try {
+      if (args[key] === void 0 && isZodOptional(schema)) {
+        if (hasZodDefault(schema)) {
+          validated[key] = schema.parse(void 0);
+        }
+        continue;
+      }
+      validated[key] = schema.parse(args[key]);
+    } catch (error) {
+      throw new import_zod.z.ZodError([
+        {
+          code: "custom",
+          path: [key],
+          message: `${error.message}`
+        }
+      ]);
+    }
+  }
+  return validated;
+}
+
+// src/mcp-server.mjs
 var MCPServer = class {
   constructor(config) {
     this.config = {
@@ -43,14 +410,16 @@ var MCPServer = class {
    * Register a tool with Zod schema validation
    */
   tool(name, inputSchema, handler) {
-    const jsonSchema = this.zodToJsonSchema(inputSchema);
+    const jsonSchema = zodToJsonSchema(inputSchema);
     const validatedHandler = async (args) => {
       try {
-        const validatedArgs = this.validateWithZod(inputSchema, args);
+        const validatedArgs = validateWithZod(inputSchema, args);
         return await handler(validatedArgs);
       } catch (error) {
         if (error.name === "ZodError") {
-          throw new Error(`Validation error: ${error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`);
+          throw new Error(
+            `Validation error: ${error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`
+          );
         }
         throw error;
       }
@@ -59,8 +428,7 @@ var MCPServer = class {
       name,
       description: handler.description || `Tool: ${name}`,
       inputSchema: jsonSchema,
-      handler: validatedHandler,
-      zodSchema: inputSchema
+      handler: validatedHandler
     });
     return this;
   }
@@ -77,136 +445,34 @@ var MCPServer = class {
     return this;
   }
   /**
-   * Register a prompt
+   * Register a prompt with Zod schema validation
    */
   prompt(name, inputSchema, handler) {
-    const jsonSchema = this.zodToJsonSchema(inputSchema);
+    zodToJsonSchema(inputSchema);
+    const validatedHandler = async (args) => {
+      try {
+        const validatedArgs = validateWithZod(inputSchema, args);
+        return await handler(validatedArgs);
+      } catch (error) {
+        if (error.name === "ZodError") {
+          throw new Error(
+            `Validation error: ${error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`
+          );
+        }
+        throw error;
+      }
+    };
     this.prompts.set(name, {
       name,
       description: handler.description || `Prompt: ${name}`,
-      inputSchema: jsonSchema,
-      handler,
-      zodSchema: inputSchema
+      arguments: Object.entries(inputSchema).map(([key, schema]) => ({
+        name: key,
+        description: schema.description || `${key} parameter`,
+        required: !isZodOptional(schema)
+      })),
+      handler: validatedHandler
     });
     return this;
-  }
-  /**
-   * Convert Zod schema object to JSON Schema
-   */
-  zodToJsonSchema(zodSchema) {
-    const properties = {};
-    const required = [];
-    for (const [key, schema] of Object.entries(zodSchema)) {
-      const jsonSchemaProperty = this.convertZodToJsonSchema(schema);
-      properties[key] = jsonSchemaProperty;
-      if (!this.isZodOptional(schema) && !this.hasZodDefault(schema)) {
-        required.push(key);
-      }
-    }
-    return {
-      type: "object",
-      properties,
-      required
-    };
-  }
-  /**
-   * Convert individual Zod schema to JSON Schema property
-   */
-  convertZodToJsonSchema(zodSchema) {
-    if (zodSchema._def.typeName === "ZodOptional") {
-      return this.convertZodToJsonSchema(zodSchema._def.innerType);
-    }
-    if (zodSchema._def.typeName === "ZodDefault") {
-      const baseSchema = this.convertZodToJsonSchema(zodSchema._def.innerType);
-      baseSchema.default = zodSchema._def.defaultValue();
-      return baseSchema;
-    }
-    switch (zodSchema._def.typeName) {
-      case "ZodString":
-        return {
-          type: "string",
-          description: zodSchema.description || "String value"
-        };
-      case "ZodNumber":
-        return {
-          type: "number",
-          description: zodSchema.description || "Numeric value"
-        };
-      case "ZodBoolean":
-        return {
-          type: "boolean",
-          description: zodSchema.description || "Boolean value"
-        };
-      case "ZodEnum":
-        return {
-          type: "string",
-          enum: zodSchema._def.values,
-          description: zodSchema.description || `One of: ${zodSchema._def.values.join(", ")}`
-        };
-      case "ZodArray":
-        return {
-          type: "array",
-          items: this.convertZodToJsonSchema(zodSchema._def.type),
-          description: zodSchema.description || "Array of values"
-        };
-      case "ZodObject":
-        const nestedProperties = {};
-        const nestedRequired = [];
-        for (const [key, nestedSchema] of Object.entries(zodSchema._def.shape())) {
-          nestedProperties[key] = this.convertZodToJsonSchema(nestedSchema);
-          if (!this.isZodOptional(nestedSchema)) {
-            nestedRequired.push(key);
-          }
-        }
-        return {
-          type: "object",
-          properties: nestedProperties,
-          required: nestedRequired,
-          description: zodSchema.description || "Object value"
-        };
-      default:
-        console.warn(`Unknown Zod type: ${zodSchema._def.typeName}, defaulting to string`);
-        return {
-          type: "string",
-          description: zodSchema.description || "String value"
-        };
-    }
-  }
-  /**
-   * Check if Zod schema is optional
-   */
-  isZodOptional(zodSchema) {
-    return zodSchema._def.typeName === "ZodOptional" || zodSchema._def.typeName === "ZodDefault";
-  }
-  /**
-   * Check if Zod schema has default value
-   */
-  hasZodDefault(zodSchema) {
-    return zodSchema._def.typeName === "ZodDefault";
-  }
-  /**
-   * Validate arguments with Zod schema
-   */
-  validateWithZod(zodSchema, args) {
-    const validated = {};
-    for (const [key, schema] of Object.entries(zodSchema)) {
-      try {
-        if (args[key] === void 0 && this.isZodOptional(schema)) {
-          if (this.hasZodDefault(schema)) {
-            validated[key] = schema.parse(void 0);
-          }
-          continue;
-        }
-        validated[key] = schema.parse(args[key]);
-      } catch (error) {
-        throw new import_zod.z.ZodError([{
-          code: "custom",
-          path: [key],
-          message: `${error.message}`
-        }]);
-      }
-    }
-    return validated;
   }
   /**
    * Handle MCP protocol requests
@@ -236,16 +502,13 @@ var MCPServer = class {
   /**
    * Handle initialize request
    */
-  async handleInitialize(params) {
-    const clientVersion = params.protocolVersion;
-    const supportedVersions = ["2024-11-05", "2025-03-26"];
-    const negotiatedVersion = supportedVersions.includes(clientVersion) ? clientVersion : this.config.protocolVersion;
+  async handleInitialize() {
     return {
-      protocolVersion: negotiatedVersion,
+      protocolVersion: this.config.protocolVersion,
       capabilities: {
-        tools: this.tools.size > 0 ? { listChanged: true } : void 0,
-        resources: this.resources.size > 0 ? { listChanged: true } : void 0,
-        prompts: this.prompts.size > 0 ? { listChanged: true } : void 0
+        tools: { listChanged: true },
+        resources: { listChanged: true },
+        prompts: { listChanged: true }
       },
       serverInfo: {
         name: this.config.name,
@@ -257,7 +520,7 @@ var MCPServer = class {
   /**
    * Handle tools/list request
    */
-  async handleToolsList(params) {
+  async handleToolsList() {
     const tools = Array.from(this.tools.values()).map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -269,22 +532,30 @@ var MCPServer = class {
    * Handle tools/call request
    */
   async handleToolsCall(params) {
-    if (!params || !params.name) {
+    if (!params?.name) {
       throw new Error("Tool name is required");
     }
     const tool = this.tools.get(params.name);
     if (!tool) {
       throw new Error(`Tool not found: ${params.name}`);
     }
-    return await tool.handler(params.arguments || {});
+    try {
+      const result = await tool.handler(params.arguments || {});
+      return result;
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `Error: ${error.message}` }],
+        isError: true
+      };
+    }
   }
   /**
    * Handle resources/list request
    */
-  async handleResourcesList(params) {
+  async handleResourcesList() {
     const resources = Array.from(this.resources.values()).map((resource) => ({
-      name: resource.name,
       uri: resource.uri,
+      name: resource.name,
       description: resource.description
     }));
     return { resources };
@@ -293,23 +564,30 @@ var MCPServer = class {
    * Handle resources/read request
    */
   async handleResourcesRead(params) {
-    if (!params || !params.uri) {
+    if (!params?.uri) {
       throw new Error("Resource URI is required");
     }
-    const resource = Array.from(this.resources.values()).find((r) => r.uri === params.uri);
+    const resource = Array.from(this.resources.values()).find(
+      (r) => r.uri === params.uri
+    );
     if (!resource) {
       throw new Error(`Resource not found: ${params.uri}`);
     }
-    return await resource.handler(params.uri);
+    try {
+      const result = await resource.handler(params.uri);
+      return result;
+    } catch (error) {
+      throw new Error(`Resource read error: ${error.message}`);
+    }
   }
   /**
    * Handle prompts/list request
    */
-  async handlePromptsList(params) {
+  async handlePromptsList() {
     const prompts = Array.from(this.prompts.values()).map((prompt) => ({
       name: prompt.name,
       description: prompt.description,
-      arguments: this.jsonSchemaToPromptArgs(prompt.inputSchema)
+      arguments: prompt.arguments
     }));
     return { prompts };
   }
@@ -317,29 +595,19 @@ var MCPServer = class {
    * Handle prompts/get request
    */
   async handlePromptsGet(params) {
-    if (!params || !params.name) {
+    if (!params?.name) {
       throw new Error("Prompt name is required");
     }
     const prompt = this.prompts.get(params.name);
     if (!prompt) {
       throw new Error(`Prompt not found: ${params.name}`);
     }
-    const validatedArgs = this.validateWithZod(prompt.zodSchema, params.arguments || {});
-    return await prompt.handler(validatedArgs);
-  }
-  /**
-   * Convert JSON Schema to prompt arguments format
-   */
-  jsonSchemaToPromptArgs(jsonSchema) {
-    const args = [];
-    for (const [name, property] of Object.entries(jsonSchema.properties || {})) {
-      args.push({
-        name,
-        description: property.description || `${name} parameter`,
-        required: jsonSchema.required?.includes(name) || false
-      });
+    try {
+      const result = await prompt.handler(params.arguments || {});
+      return result;
+    } catch (error) {
+      throw new Error(`Prompt execution error: ${error.message}`);
     }
-    return args;
   }
   /**
    * Get server statistics
@@ -353,114 +621,191 @@ var MCPServer = class {
     };
   }
 };
-function createLambdaHandler(mcpServer) {
-  return async (event, context) => {
-    try {
-      const method = event.httpMethod;
-      const headers = event.headers || {};
-      const corsHeaders = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id",
-        "Access-Control-Allow-Methods": "POST, GET, OPTIONS"
-      };
-      if (method === "OPTIONS") {
-        return createResponse("", 200, corsHeaders);
-      }
-      if (method === "POST") {
-        return await handleMCPRequest(mcpServer, event.body, headers, corsHeaders);
-      }
-      if (method === "GET") {
-        return createErrorResponse(405, -32e3, "Method not allowed: Stateless mode", corsHeaders);
-      }
-      return createErrorResponse(405, -32e3, `Method not allowed: ${method}`, corsHeaders);
-    } catch (error) {
-      console.error("Lambda error:", error);
-      return createErrorResponse(500, -32603, "Internal server error", {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      });
-    }
+
+// src/lambda-adapter.mjs
+init_cors_config();
+function createResponse(body, statusCode = 200, headers = {}) {
+  return {
+    statusCode,
+    headers: {
+      "Content-Type": "application/json",
+      ...headers
+    },
+    body: typeof body === "string" ? body : JSON.stringify(body)
   };
+}
+function createErrorResponse(statusCode, code, message, headers = {}, id = null) {
+  return createResponse(
+    {
+      jsonrpc: "2.0",
+      error: { code, message },
+      id
+    },
+    statusCode,
+    headers
+  );
 }
 async function handleMCPRequest(mcpServer, body, headers, corsHeaders) {
   const contentType = headers["content-type"] || headers["Content-Type"] || "";
   if (!contentType.includes("application/json")) {
-    return createErrorResponse(400, -32700, "Parse error: Content-Type must be application/json", corsHeaders);
+    return createErrorResponse(
+      400,
+      -32700,
+      "Parse error: Content-Type must be application/json",
+      corsHeaders
+    );
   }
   let jsonRpcMessage;
   try {
     jsonRpcMessage = JSON.parse(body || "{}");
-  } catch (error) {
-    return createErrorResponse(400, -32700, "Parse error: Invalid JSON", corsHeaders);
+  } catch {
+    return createErrorResponse(
+      400,
+      -32700,
+      "Parse error: Invalid JSON",
+      corsHeaders
+    );
   }
   if (!jsonRpcMessage.jsonrpc || jsonRpcMessage.jsonrpc !== "2.0") {
-    return createErrorResponse(400, -32600, "Invalid Request: missing jsonrpc field", corsHeaders, jsonRpcMessage.id);
+    return createErrorResponse(
+      400,
+      -32600,
+      "Invalid Request: missing jsonrpc field",
+      corsHeaders,
+      jsonRpcMessage.id
+    );
+  }
+  if (!jsonRpcMessage.method) {
+    return createErrorResponse(
+      400,
+      -32600,
+      "Invalid Request: missing method field",
+      corsHeaders,
+      jsonRpcMessage.id
+    );
   }
   try {
-    const response = await mcpServer.handleRequest(jsonRpcMessage);
-    if (response === null) {
-      return { statusCode: 202, headers: corsHeaders, body: "" };
+    const result = await mcpServer.handleRequest(jsonRpcMessage);
+    if (result === null) {
+      return createResponse("", 204, corsHeaders);
     }
     return createResponse(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: jsonRpcMessage.id,
-        result: response
-      }),
-      200,
       {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "Mcp-Protocol-Version": mcpServer.config.protocolVersion
-      }
+        jsonrpc: "2.0",
+        result,
+        id: jsonRpcMessage.id
+      },
+      200,
+      corsHeaders
     );
   } catch (error) {
-    console.error("MCP processing error:", error);
+    console.error("MCP request error:", error);
     let errorCode = -32603;
-    if (error.message.includes("not found"))
+    let errorMessage = error.message;
+    if (error.message.includes("Method not found")) {
       errorCode = -32601;
-    else if (error.message.includes("Validation error"))
+    } else if (error.message.includes("not found") || error.message.includes("required")) {
       errorCode = -32602;
-    return createErrorResponse(200, errorCode, error.message, corsHeaders, jsonRpcMessage.id);
+    }
+    return createErrorResponse(
+      500,
+      errorCode,
+      errorMessage,
+      corsHeaders,
+      jsonRpcMessage.id
+    );
   }
 }
-function createResponse(body, statusCode = 200, headers = {}) {
-  return {
-    statusCode,
-    headers: { "Content-Type": "application/json", ...headers },
-    body
+function createLambdaHandler(mcpServer, options = {}) {
+  const baseHandler = async (event) => {
+    try {
+      const method = event.httpMethod || event.requestContext?.http?.method;
+      const headers = event.headers || {};
+      if (method === "OPTIONS") {
+        return createResponse("", 200, CORS_HEADERS);
+      }
+      if (method === "POST") {
+        return await handleMCPRequest(
+          mcpServer,
+          event.body,
+          headers,
+          CORS_HEADERS
+        );
+      }
+      if (method === "GET") {
+        return createErrorResponse(
+          405,
+          -32e3,
+          "Method not allowed: Stateless mode",
+          CORS_HEADERS
+        );
+      }
+      return createErrorResponse(
+        405,
+        -32e3,
+        `Method not allowed: ${method}`,
+        CORS_HEADERS
+      );
+    } catch (error) {
+      console.error("Lambda error:", error);
+      return createErrorResponse(
+        500,
+        -32603,
+        "Internal server error",
+        withBasicCORS({ "Content-Type": "application/json" })
+      );
+    }
   };
+  if (options.auth) {
+    return async (event, context) => {
+      try {
+        const { createAuthenticatedHandler: createAuthenticatedHandler2 } = await Promise.resolve().then(() => (init_middleware(), middleware_exports));
+        const authenticatedHandler = createAuthenticatedHandler2(
+          baseHandler,
+          options.auth
+        );
+        return await authenticatedHandler(event, context);
+      } catch (error) {
+        console.error("Authentication module error:", error);
+        return {
+          statusCode: 500,
+          headers: withBasicCORS({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            error: "server_error",
+            message: "Authentication module not available"
+          })
+        };
+      }
+    };
+  }
+  return baseHandler;
 }
-function createErrorResponse(statusCode, errorCode, message, headers = {}, id = null) {
-  return {
-    statusCode,
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      error: { code: errorCode, message },
-      id
-    })
-  };
-}
+
+// src/common-schemas.mjs
+var import_zod2 = require("zod");
+var CommonSchemas = {
+  // Basic types
+  string: import_zod2.z.string(),
+  number: import_zod2.z.number(),
+  boolean: import_zod2.z.boolean(),
+  // Optional types
+  optionalString: import_zod2.z.string().optional(),
+  optionalNumber: import_zod2.z.number().optional(),
+  optionalBoolean: import_zod2.z.boolean().optional(),
+  // Common patterns
+  email: import_zod2.z.string().email(),
+  url: import_zod2.z.string().url(),
+  uuid: import_zod2.z.string().uuid(),
+  // Utility functions
+  enum: (values) => import_zod2.z.enum(values),
+  array: (itemSchema) => import_zod2.z.array(itemSchema),
+  object: (shape) => import_zod2.z.object(shape)
+};
+
+// src/index.mjs
 function createMCPServer(config) {
   return new MCPServer(config);
 }
-var CommonSchemas = {
-  string: import_zod.z.string(),
-  number: import_zod.z.number(),
-  boolean: import_zod.z.boolean(),
-  optionalString: import_zod.z.string().optional(),
-  optionalNumber: import_zod.z.number().optional(),
-  optionalBoolean: import_zod.z.boolean().optional(),
-  // Common patterns
-  email: import_zod.z.string().email(),
-  url: import_zod.z.string().url(),
-  uuid: import_zod.z.string().uuid(),
-  // Utility functions
-  enum: (values) => import_zod.z.enum(values),
-  array: (itemSchema) => import_zod.z.array(itemSchema),
-  object: (shape) => import_zod.z.object(shape)
-};
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   CommonSchemas,
