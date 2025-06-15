@@ -1,12 +1,12 @@
 /**
- * Basic tests for @aws-lambda-mcp/adapter
+ * Basic tests for lambda-mcp-adaptor
  */
 
 import { expect } from 'chai';
 import { createMCPServer, createLambdaHandler } from '../src/index.mjs';
 import { z } from 'zod';
 
-describe('@aws-lambda-mcp/adapter', function() {
+describe('lambda-mcp-adaptor', function() {
   let server;
   
   beforeEach(function() {
@@ -113,21 +113,19 @@ describe('@aws-lambda-mcp/adapter', function() {
       
       expect(validResult.content[0].text).to.equal('test@example.com: 25');
       
-      // Invalid arguments should throw
-      try {
-        await server.handleRequest({
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'tools/call',
-          params: {
-            name: 'validate_test',
-            arguments: { email: 'invalid-email', age: -5 }
-          }
-        });
-        expect.fail('Should have thrown validation error');
-      } catch (error) {
-        expect(error.message).to.include('Validation error');
-      }
+      // Invalid arguments should return error response
+      const errorResult = await server.handleRequest({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'validate_test',
+          arguments: { email: 'invalid-email', age: -5 }
+        }
+      });
+      
+      expect(errorResult.isError).to.be.true;
+      expect(errorResult.content[0].text).to.include('Validation error');
     });
     
     it('should handle optional parameters with defaults', async function() {
@@ -170,21 +168,19 @@ describe('@aws-lambda-mcp/adapter', function() {
       
       expect(validResult.content[0].text).to.equal('add');
       
-      // Invalid enum value should throw
-      try {
-        await server.handleRequest({
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'tools/call',
-          params: {
-            name: 'enum_test',
-            arguments: { operation: 'invalid' }
-          }
-        });
-        expect.fail('Should have thrown validation error');
-      } catch (error) {
-        expect(error.message).to.include('Validation error');
-      }
+      // Invalid enum value should return error response
+      const enumErrorResult = await server.handleRequest({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'enum_test',
+          arguments: { operation: 'invalid' }
+        }
+      });
+      
+      expect(enumErrorResult.isError).to.be.true;
+      expect(enumErrorResult.content[0].text).to.include('Validation error');
     });
     
     it('should register and handle resources', async function() {
