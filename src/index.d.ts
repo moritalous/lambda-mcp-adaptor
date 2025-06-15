@@ -3,7 +3,9 @@
  */
 
 import { z } from 'zod';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 
+// Core Types
 export interface MCPServerConfig {
   name: string;
   version: string;
@@ -42,12 +44,38 @@ export interface MCPPromptResult {
   }>;
 }
 
-export type ZodSchema = Record<string, z.ZodType>;
+// Authentication Types
+export interface AuthUser {
+  token?: string;
+  [key: string]: any;
+}
 
+export interface AuthValidationResult {
+  isValid: boolean;
+  user?: AuthUser;
+  token?: string;
+  error?: APIGatewayProxyResult;
+}
+
+export interface BearerTokenAuthConfig {
+  type: 'bearer-token';
+  tokens?: string[];
+  validate?: (token: string, event: APIGatewayProxyEvent) => AuthValidationResult | Promise<AuthValidationResult>;
+}
+
+export type AuthConfig = BearerTokenAuthConfig;
+
+export interface LambdaHandlerOptions {
+  auth?: AuthConfig;
+}
+
+// Schema Types
+export type ZodSchema = Record<string, z.ZodType>;
 export type ToolHandler<T = any> = (args: T) => Promise<MCPToolResult>;
 export type ResourceHandler = (uri: string) => Promise<MCPResourceResult>;
 export type PromptHandler<T = any> = (args: T) => Promise<MCPPromptResult>;
 
+// Core Classes
 export declare class MCPServer {
   constructor(config: MCPServerConfig);
   
@@ -78,31 +106,15 @@ export declare class MCPServer {
   };
 }
 
-export interface AWSLambdaEvent {
-  httpMethod: string;
-  headers: Record<string, string>;
-  body: string;
-}
-
-export interface AWSLambdaContext {
-  // AWS Lambda context properties
-}
-
-export interface AWSLambdaResponse {
-  statusCode: number;
-  headers: Record<string, string>;
-  body: string;
-}
-
-export type LambdaHandler = (
-  event: AWSLambdaEvent,
-  context: AWSLambdaContext
-) => Promise<AWSLambdaResponse>;
-
-export declare function createLambdaHandler(mcpServer: MCPServer): LambdaHandler;
-
+// Main Functions
 export declare function createMCPServer(config: MCPServerConfig): MCPServer;
 
+export declare function createLambdaHandler(
+  mcpServer: MCPServer,
+  options?: LambdaHandlerOptions
+): (event: APIGatewayProxyEvent, context: Context) => Promise<APIGatewayProxyResult>;
+
+// Common Schemas
 export declare const CommonSchemas: {
   string: z.ZodString;
   number: z.ZodNumber;
